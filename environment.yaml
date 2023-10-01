@@ -1,0 +1,14 @@
+---
+name: mat-renderer
+channels:
+    - defaults
+    - pytorch
+    - nvidia
+dependencies:
+    - pytorch
+    - torchvision
+    - pytorch-cuda=11.8
+    - numpy
+    - notebook
+    - imageio
+    - matplotlib
