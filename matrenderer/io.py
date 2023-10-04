@@ -61,7 +61,7 @@ def get_image_filenames(path: str) -> [str]:
                     break
     return res
 
-def load_svbrdf_maps(path: str) -> {str: torch.tensor}:
+def load_svbrdf_maps(path: str) -> {str: torch.Tensor}:
     """Get SVBRDF maps from a given path, supported image extension and SVBRDF map names are defined in
         IMAGE_EXTENSIONS and SVBRDF_MAPS.
 
@@ -80,10 +80,17 @@ def load_svbrdf_maps(path: str) -> {str: torch.tensor}:
     return res
 
 def show_maps(maps: {str: torch.tensor}, fig_width: int=10, ncols: int=2):
-    nrows = math.ceil(len(maps) / ncols)
+    n_maps = 0
+    for m in maps.values():
+        if m is not None: n_maps += 1
+
+    nrows = math.ceil(n_maps / ncols)
     fig, axs = plt.subplots(nrows=nrows, ncols=ncols, figsize=(fig_width, int(fig_width/2)*nrows), squeeze=False)
 
     for i, map_name in enumerate(maps.keys()):
+        if maps[map_name] is None:
+            continue
+
         tensor_img = maps[map_name].detach()
         img = F.to_pil_image(tensor_img)
 
@@ -94,4 +101,7 @@ def show_maps(maps: {str: torch.tensor}, fig_width: int=10, ncols: int=2):
         axs[int(i/ncols), i%ncols].set(xticklabels=[], yticklabels=[], xticks=[], yticks=[])
         axs[int(i/ncols), i%ncols].set_title(map_name)
     
+    if len(maps.keys()) < ncols * nrows:
+        axs[nrows-1, ncols-1].set(xticklabels=[], yticklabels=[], xticks=[], yticks=[])
+
     fig.tight_layout()
