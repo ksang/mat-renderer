@@ -105,3 +105,9 @@ def show_maps(maps: {str: torch.tensor}, fig_width: int=10, ncols: int=2):
         axs[nrows-1, ncols-1].set(xticklabels=[], yticklabels=[], xticks=[], yticks=[])
 
     fig.tight_layout()
+
+def show_rendered(image: torch.tensor, figsize=(8, 8), title=None):
+    fig = plt.figure(figsize=figsize)
+    if title:
+        fig.suptitle(title)
+    plt.imshow((image.permute(1,2,0)).cpu().detach().numpy())

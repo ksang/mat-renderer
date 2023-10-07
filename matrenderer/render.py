@@ -52,34 +52,34 @@ class Renderer(nn.Module):
         self.eps = eps
         self.lights = [l.to(self.device) for l in lights]
 
-    def check_maps(self, maps: {str: torch.tensor}) -> {str: torch.tensor}:
+    def fill_maps(self, maps: {str: torch.tensor}) -> {str: torch.Tensor}:
         assert maps['basecolor'] != None
         shape = maps['basecolor'].shape
         if maps['normal'] == None:
-            normal = torch.zeros_like(maps['basecolor'])
+            normal = torch.zeros_like(maps['basecolor'], requires_grad=False)
             normal[:,:,2] = 1.0
             maps['normal'] = normal
         if maps['roughness'] == None:
-            maps['roughness'] = torch.zeros((shape[0], 1, *shape[2:]), device=maps['basecolor'].device)
+            maps['roughness'] = torch.zeros((shape[0], 1, *shape[2:]), device=maps['basecolor'].device, requires_grad=False)
         if maps['metallic'] == None:
-            maps['metallic'] = torch.zeros((shape[0], 1, *shape[2:]), device=maps['basecolor'].device)
+            maps['metallic'] = torch.zeros((shape[0], 1, *shape[2:]), device=maps['basecolor'].device, requires_grad=False)
         if maps['ao'] == None:
-            maps['ao'] = torch.ones((shape[0], 1, *shape[2:]), device=maps['basecolor'].device)
+            maps['ao'] = torch.ones((shape[0], 1, *shape[2:]), device=maps['basecolor'].device, requires_grad=False)
         if maps['height'] == None:
-            maps['height'] = torch.zeros((shape[0], 1, *shape[2:]), device=maps['basecolor'].device)
+            maps['height'] = torch.zeros((shape[0], 1, *shape[2:]), device=maps['basecolor'].device, requires_grad=False)
         return maps
 
-    def gamma_correction(self, input) -> torch.Tensor:
+    def gamma_correction(self, input: torch.Tensor) -> torch.Tensor:
         return input ** (1.0 / self.gamma)
     
-    def get_positions(self, albedo):
+    def get_positions(self, albedo: torch.Tensor) -> torch.Tensor:
         img_size: int = albedo.shape[2]
         x_coords = torch.linspace(0.5 / img_size - 0.5, 0.5 - 0.5 / img_size, img_size,
                                device=self.device)
         x_coords = x_coords * self.size
 
         x, y = torch.meshgrid(x_coords, x_coords, indexing='xy')
-        pos = torch.stack((x, -y, torch.zeros_like(x)))
+        pos = torch.stack((x, -y, torch.zeros_like(x, requires_grad=False)))
         return pos
 
     def render(self, maps: {str: torch.tensor}) -> torch.Tensor:
@@ -91,7 +91,7 @@ class Renderer(nn.Module):
             Tensor: Rendered image.
 
         """
-        maps = self.check_maps(maps)
+        maps = self.fill_maps(maps)
 
         albedo = maps['basecolor'].to(self.device) ** self.gamma
         normal = maps['normal'].to(self.device)
@@ -101,26 +101,21 @@ class Renderer(nn.Module):
         ao = maps['ao'].to(self.device)
         batch_size = albedo.size(0)
 
-        """
-        # Discard the alpha channel of basecolor and normal, map the basecolor to gamma space, and
-        # scale the normal image to [-1, 1]
-        albedo = albedo.narrow(1, 0, 3) ** 2.2
-        normal = ((normal.narrow(1, 0, 3) - 0.5) * 2.0)
-        """
         camera      = self.camera.view(3, 1, 1)
         pos         = self.get_positions(albedo)
         # intermediate lighting buffers
-        Lo          = torch.zeros_like(albedo)
-        t_radiance  = torch.zeros_like(albedo)
-        diffuse     = torch.zeros_like(albedo)
-        specular    = torch.zeros_like(albedo)
+        Lo          = torch.zeros_like(albedo, requires_grad=False)
+        t_radiance  = torch.zeros_like(albedo, requires_grad=False)
+        diffuse     = torch.zeros_like(albedo, requires_grad=False)
+        specular    = torch.zeros_like(albedo, requires_grad=False)
 
-        F0 = self.F0 * torch.ones_like(metallic)
+        F0 = self.F0 * torch.ones_like(metallic, requires_grad=False)
         F0 = torch.lerp(F0, albedo, metallic)
-        # Nx3xWxH
+        # Nx3xHxW
+        # scale the normal image to [-1, 1]
         normal = ((normal.narrow(1, 0, 3) - 0.5) * 2.0)
         N = normal/torch.norm(normal, dim=1, keepdim=True)                      # normal
-        # 3xWxH for all data in the batch
+        # 3xHxW for all data in the batch
         V = (camera - pos) / torch.norm(camera - pos, dim=0, keepdim=True)      # view direcion
 
         for light in self.lights:
@@ -135,10 +130,10 @@ class Renderer(nn.Module):
             radiance    = light_color * attenuation
 
             # expanding vectors to cover entrie batch
-            V = V.unsqueeze(0).repeat(batch_size, 1, 1, 1)                      # 3xWxH -> Bx3xWxH
-            H = H.unsqueeze(0).repeat(batch_size, 1, 1, 1)                      # 3xWxH -> Bx3xWxH
-            L = L.unsqueeze(0).repeat(batch_size, 1, 1, 1)                      # 3xWxH -> Bx3xWxH
-            radiance = radiance.unsqueeze(0).repeat(batch_size, 1, 1, 1)        # 3xWxH -> Bx3xWxH
+            V = V.unsqueeze(0).repeat(batch_size, 1, 1, 1)                      # 3xHxW -> Bx3xHxW
+            H = H.unsqueeze(0).repeat(batch_size, 1, 1, 1)                      # 3xHxW -> Bx3xHxW
+            L = L.unsqueeze(0).repeat(batch_size, 1, 1, 1)                      # 3xHxW -> Bx3xHxW
+            radiance = radiance.unsqueeze(0).repeat(batch_size, 1, 1, 1)        # 3xHxW -> Bx3xHxW
             t_radiance += radiance
 
             NDF = DistributionGGX(N, H, roughness)                              # normal distribution function
@@ -169,7 +164,7 @@ class Renderer(nn.Module):
 def vector_dot(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     return torch.clamp((A * B).sum(1, keepdim=True), min=0.0, max=1.0)
 
-# N, H: （3xWxH), roughness: (Bx1xWxH)
+# N, H: （3xHxW), roughness: (Bx1xHxW)
 def DistributionGGX(N: torch.Tensor, H: torch.Tensor, roughness: torch.Tensor) -> torch.Tensor:
 
     a   = roughness*roughness
@@ -183,7 +178,7 @@ def DistributionGGX(N: torch.Tensor, H: torch.Tensor, roughness: torch.Tensor) -
 
     return num / denom
 
-# NdotV, roughness: (Bx1xWxH)
+# NdotV, roughness: (Bx1xHxW)
 def GeometrySchlickGGX(NdotV: torch.Tensor, roughness: torch.Tensor) -> torch.Tensor:
     r = (roughness + 1.0)
     k = (r*r) / 8.0
@@ -193,7 +188,7 @@ def GeometrySchlickGGX(NdotV: torch.Tensor, roughness: torch.Tensor) -> torch.Te
 	
     return num / denom
 
-# N, V, L: （Bx3xWxH), roughness: (Bx1xWxH)
+# N, V, L: （Bx3xHxW), roughness: (Bx1xHxW)
 def GeometrySmith(N: torch.Tensor, V: torch.Tensor, L: torch.Tensor, roughness: torch.Tensor) -> torch.Tensor:
     NdotV = vector_dot(N, V)
     NdotL = vector_dot(N, L)
@@ -202,6 +197,6 @@ def GeometrySmith(N: torch.Tensor, V: torch.Tensor, L: torch.Tensor, roughness: 
 	
     return ggx1 * ggx2
 
-# cosTheta, F0 (Bx1xWxH)
+# cosTheta, F0 (Bx1xHxW)
 def fresnelSchlick(cosTheta: torch.Tensor, F0: torch.Tensor) -> torch.Tensor:
     return F0 + (1.0 - F0) * torch.pow(torch.clamp(1.0 - cosTheta, min=0.0, max=1.0), 5.0);

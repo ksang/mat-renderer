@@ -12,3 +12,4 @@ dependencies:
     - notebook
     - imageio
     - matplotlib
+    - tqdm
