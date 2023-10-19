@@ -110,4 +110,5 @@ def show_rendered(image: torch.tensor, figsize=(8, 8), title=None):
     fig = plt.figure(figsize=figsize)
     if title:
         fig.suptitle(title)
+    plt.axis('off')
     plt.imshow((image.permute(1,2,0)).cpu().detach().numpy())
