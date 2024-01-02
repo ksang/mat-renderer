@@ -1,5 +1,5 @@
 # mat-renderer
-A simple physics-based differentiable material renderer based on Cook-Torrance model.
+A simple PyTorch physics-based differentiable material renderer based on the Cook-Torrance model.
 
 ### Example material svBRDF maps:
 
